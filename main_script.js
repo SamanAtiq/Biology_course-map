@@ -40,6 +40,8 @@ d3.json('data_extract/data/all_courses_py.json').then(coursesData => {
     let coreqEdgeIds = new Set(); // tracks corequisite edge IDs for correct mouseout reset
     // Tracks the currently frozen (clicked) course node; null means no selection active
     let frozenCourseId = null;
+    // Assigned by renderGraph so the sidebar X button can call resetHighlight across scopes
+    let _unfreezeSelection = null;
 
     // Create initial message text in the SVG
     const svg = d3.select("svg");
@@ -258,7 +260,7 @@ d3.json('data_extract/data/all_courses_py.json').then(coursesData => {
             } else {
                 frozenCourseId = d;
                 applyHighlight(d);
-                showCourseInfoInSidebar(course, downstreamMap);
+                showCourseInfoInSidebar(course, downstreamMap, filteredCourseIds);
             }
         });
 
@@ -362,6 +364,15 @@ d3.json('data_extract/data/all_courses_py.json').then(coursesData => {
                     .style("stroke-dasharray", isCoreq ? "5, 5" : null);
             });
         }
+
+        // Expose unfreeze capability so the sidebar X button can reach resetHighlight across scopes
+        _unfreezeSelection = function() {
+            if (frozenCourseId !== null) {
+                frozenCourseId = null;
+                resetHighlight();
+                clearCourseInfoSidebar();
+            }
+        };
     }
 
     // Function to update the graph based on selected subjects and themes
@@ -506,41 +517,85 @@ d3.json('data_extract/data/all_courses_py.json').then(coursesData => {
         return edges;
     }
 
-    // Populate the "Course Information" sidebar panel with details for the selected course
-    function showCourseInfoInSidebar(course, downstreamMap) {
+    // Populate the "Course Information" sidebar panel with the redesigned card layout
+    function showCourseInfoInSidebar(course, downstreamMap, filteredCourseIds) {
         const panel = document.getElementById("course-info-placeholder");
 
         const id          = course.id || course.course_code || course.code || "Not available";
         const name        = course.name || course.title || course.course_title || "Not available";
         const description = course.description || "Not available";
-        const prereqs     = (course.prerequisites  || []).join(", ") || "None";
-        const coreqs      = (course.corequisites   || []).join(", ") || "None";
-        const themes      = (course.themes         || []).join(", ") || "Not available";
+        const credits     = course.credits || course.units || "Not available";
         const category    = course.category || "Not available";
-        const level       = course.level || (course.course_code ? `${course.course_code.charAt(5)}00 level` : "Not available");
         const term        = course.term || "Not available";
-        const calUrl      = course.calendar_url || null;
+        const level       = course.level || (course.course_code ? `${course.course_code.charAt(5)}00 level` : "Not available");
 
-        // Derive dependents from the reverse edge map since they are not stored on the course object
-        const dependents = (downstreamMap[id] || []).map(d => d.code).join(", ") || "None";
+        const prereqList  = course.prerequisites || [];
+        const coreqList   = course.corequisites  || [];
+        // Derive dependent courses from the reverse edge map
+        const depList     = (downstreamMap[id]   || []).map(d => d.code);
+
+        // Header background mirrors the selected node color in the graph
+        const isFiltered = filteredCourseIds && filteredCourseIds.includes(id);
+        const headerBg   = isFiltered ? '#f9f2ea' : '#e3f8f9';
+
+        // Build stacked reference cards for a list of course codes
+        function buildCards(codeList, cardClass) {
+            if (!codeList.length) return '<p class="ci-empty">None listed.</p>';
+            return codeList.map(code => {
+                const rel     = coursesData.find(c => c.course_code === code);
+                const relName = rel ? (rel.course_title || rel.title || rel.name || '') : '';
+                return `<div class="ci-course-card ${cardClass}">
+                    <div class="ci-card-code">${code}</div>
+                    ${relName ? `<div class="ci-card-name">${relName}</div>` : ''}
+                </div>`;
+            }).join('');
+        }
 
         panel.classList.add("filled");
         panel.innerHTML = `
-            <strong>${id}</strong><br>
-            <em>${name}</em>
-            ${calUrl ? `<br><a href="${calUrl}" target="_blank" style="font-size:0.85em;">View in Calendar</a>` : ""}
-            <br><br>
-            <strong>Level:</strong> ${level}<br>
-            <strong>Term:</strong> ${term}<br>
-            <strong>Category:</strong> ${category}<br>
-            <strong>Themes:</strong> ${themes}<br>
-            <br>
-            <strong>Description:</strong><br>${description}<br>
-            <br>
-            <strong>Prerequisites:</strong> ${prereqs}<br>
-            <strong>Corequisites:</strong> ${coreqs}<br>
-            <strong>Dependents:</strong> ${dependents}
+            <div class="ci-header" style="background:${headerBg}">
+                <div class="ci-header-content">
+                    <div class="ci-code">${id}</div>
+                    <div class="ci-name">${name}</div>
+                </div>
+                <button class="ci-close" id="course-info-close" title="Clear selection">✕</button>
+            </div>
+
+            <div class="ci-section">
+                <div class="ci-section-label">Course Details</div>
+                <div class="ci-kv-grid">
+                    <span class="ci-key">Level</span><span class="ci-val">${level}</span>
+                    <span class="ci-key">Credits</span><span class="ci-val">${credits}</span>
+                    <span class="ci-key">Term</span><span class="ci-val">${term}</span>
+                    <span class="ci-key">Category</span><span class="ci-val">${category}</span>
+                </div>
+            </div>
+
+            <div class="ci-section">
+                <div class="ci-section-label">Description</div>
+                <div class="ci-description">${description}</div>
+            </div>
+
+            <div class="ci-section">
+                <div class="ci-section-label">Prerequisites (${prereqList.length})</div>
+                ${buildCards(prereqList, 'ci-card-prereq')}
+            </div>
+
+            <div class="ci-section">
+                <div class="ci-section-label">Corequisites (${coreqList.length})</div>
+                ${buildCards(coreqList, 'ci-card-coreq')}
+            </div>
+
+            <div class="ci-section">
+                <div class="ci-section-label">Dependent Courses (${depList.length})</div>
+                ${buildCards(depList, 'ci-card-dep')}
+            </div>
         `;
+
+        // Wire the X button — calls back into renderGraph scope via _unfreezeSelection
+        document.getElementById("course-info-close").addEventListener("click", function() {
+            if (_unfreezeSelection) _unfreezeSelection();
+        });
     }
 
     // Clear the sidebar panel back to its default placeholder state
