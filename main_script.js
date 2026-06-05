@@ -38,6 +38,8 @@ d3.json('data_extract/data/all_courses_py.json').then(coursesData => {
     let selectedThemes = [];
     let selectedLevel = [];
     let coreqEdgeIds = new Set(); // tracks corequisite edge IDs for correct mouseout reset
+    // Tracks the currently frozen (clicked) course node; null means no selection active
+    let frozenCourseId = null;
 
     // Create initial message text in the SVG
     const svg = d3.select("svg");
@@ -242,15 +244,21 @@ d3.json('data_extract/data/all_courses_py.json').then(coursesData => {
             svg.call(zoom.transform, d3.zoomIdentity.scale(initialScale));
         }
 
-        inner.selectAll("g.node").on("click", function(event, d) {
-            console.log(d)
-            const course = coursesData.find(course => course.course_code === d);
-            if (course) {
-                // Store the current filters in localStorage
-                localStorage.setItem('filters', JSON.stringify({ selectedSubjects, selectedThemes, selectedLevel }));
-                
-                // Redirect to the course details page with the course code as a URL parameter
-                window.location.href = `courseDetails.html?course_code=${d}`;
+        // Click: freeze/unfreeze — same node toggles off; different node switches selection
+        inner.selectAll("g.node").on("click", function(_event, d) {
+            const course = coursesData.find(c => c.course_code === d);
+            if (!course) return;
+
+            tooltip.transition().duration(10).style("opacity", 0);
+
+            if (frozenCourseId === d) {
+                frozenCourseId = null;
+                resetHighlight();
+                clearCourseInfoSidebar();
+            } else {
+                frozenCourseId = d;
+                applyHighlight(d);
+                showCourseInfoInSidebar(course, downstreamMap);
             }
         });
 
@@ -273,36 +281,51 @@ d3.json('data_extract/data/all_courses_py.json').then(coursesData => {
         // Build downstream map once per render so hover can find dependents efficiently
         const downstreamMap = buildDownstreamMap(coursesData);
 
-        // Mouseover: highlight full upstream chain (prereqs) and full downstream chain (dependents)
-        inner.selectAll("g.node").on("mouseover", function(event, d) {
+        // Mouseover: show tooltip and preview dependency chain (no-op while frozen)
+        inner.selectAll("g.node").on("mouseover", function(_event, d) {
+            if (frozenCourseId !== null) return;
             const course = coursesData.find(course => course.course_code === d);
-            console.log(course.course_code)
 
-            // Set tooltip content dynamically
-            tooltip.transition().duration(10).style("opacity", 1); // Show the tooltip
+            tooltip.transition().duration(10).style("opacity", 1);
             tooltip.html(`
                 <div class="title">${course.course_code}</div>
                 <div class="body">${styleTooltip(course.course_title, course.description)}</div>
             `);
 
-            // Make the hovered node bold and full opacity
-            d3.select(this).select("rect").style("fill", function() {
-                return filteredCourseIds.includes(d) ? "#EEDFCC" : "cyan";
-            });
-            d3.select(this).select("text").style("font-weight", "bold");
-            d3.select(this).style("opacity", 1);
+            applyHighlight(d);
+        })
+        .on("mousemove", function (event) {
+            if (frozenCourseId !== null) return;
+            const tooltipWidth = tooltip.node().offsetWidth;
+            const tooltipHeight = tooltip.node().offsetHeight;
+            const x = event.clientX + 10;
+            const y = event.clientY + 10;
+            const xPos = x + tooltipWidth > window.innerWidth ? x - tooltipWidth - 20 : x;
+            const yPos = y + tooltipHeight > window.innerHeight ? y - tooltipHeight - 20 : y;
+            tooltip.style("left", xPos + "px").style("top", yPos + "px");
+        });
 
-            // Reduce opacity of all other nodes and edges
+        // Mouseout: hide tooltip and restore base styles (no-op while frozen)
+        inner.selectAll("g.node").on("mouseout", function() {
+            if (frozenCourseId !== null) return;
+            tooltip.transition().duration(10).style("opacity", 0);
+            resetHighlight();
+        });
+
+        // Highlight the full dependency chain for a course: dims others, colors upstream/downstream
+        function applyHighlight(d) {
+            inner.select(`g.node[id="${d}"]`).select("rect").style("fill", filteredCourseIds.includes(d) ? "#EEDFCC" : "cyan");
+            inner.select(`g.node[id="${d}"]`).select("text").style("font-weight", "bold");
+            inner.select(`g.node[id="${d}"]`).style("opacity", 1);
+
             inner.selectAll("g.node").filter(n => n !== d).style("opacity", 0.2);
             inner.selectAll("g.edgePath").style("opacity", 0.2);
 
-            // Recursively highlight all upstream courses (prerequisites and corequisites)
             collectUpstreamEdges(d, coursesData).forEach(function({ from, to, type }) {
                 const nodeColor = type === 'corequisite' ? 'coral' : 'cyan';
                 inner.select(`g.node[id="${from}"]`).select("rect").style("fill", nodeColor);
                 inner.select(`g.node[id="${from}"]`).select("text").style("font-weight", "bold");
                 inner.select(`g.node[id="${from}"]`).style("opacity", 1);
-
                 inner.select(`g.edgePath[id*="${from}-${to}"]`).style("opacity", 1)
                     .select("path")
                     .style("stroke-width", "3px")
@@ -310,46 +333,25 @@ d3.json('data_extract/data/all_courses_py.json').then(coursesData => {
                     .style("stroke-dasharray", type === 'corequisite' ? "5, 5" : null);
             });
 
-            // Recursively highlight all downstream courses (courses that depend on this one)
             collectDownstreamEdges(d, downstreamMap).forEach(function({ from, to, type }) {
                 inner.select(`g.node[id="${to}"]`).select("rect").style("fill", "#90EE90");
                 inner.select(`g.node[id="${to}"]`).select("text").style("font-weight", "bold");
                 inner.select(`g.node[id="${to}"]`).style("opacity", 1);
-
                 inner.select(`g.edgePath[id*="${from}-${to}"]`).style("opacity", 1)
                     .select("path")
                     .style("stroke-width", "3px")
                     .style("stroke", "#228B22")
                     .style("stroke-dasharray", type === 'corequisite' ? "5, 5" : null);
             });
-        })
-        .on("mousemove", function (event) {
-            // Position the tooltip relative to the viewport
-            const tooltipWidth = tooltip.node().offsetWidth;
-            const tooltipHeight = tooltip.node().offsetHeight;
-    
-            const x = event.clientX + 10; // Offset tooltip slightly from the cursor
-            const y = event.clientY + 10;
-    
-            // Prevent tooltip from going off-screen
-            const xPos = x + tooltipWidth > window.innerWidth ? x - tooltipWidth - 20 : x;
-            const yPos = y + tooltipHeight > window.innerHeight ? y - tooltipHeight - 20 : y;
-    
-            tooltip.style("left", xPos + "px").style("top", yPos + "px");
-        });
+        }
 
-        // Mouseout: reset all nodes and edges to their base styles
-        inner.selectAll("g.node").on("mouseout", function() {
-            tooltip.transition().duration(10).style("opacity", 0); // Hide the tooltip
-
-            // Reset every node: restore filtered fill and remove bold
+        // Restore all nodes/edges to their unfrozen base styles
+        function resetHighlight() {
             inner.selectAll("g.node").each(function(nodeId) {
                 d3.select(this).select("rect").style("fill", filteredCourseIds.includes(nodeId) ? "#EEDFCC" : null);
                 d3.select(this).select("text").style("font-weight", null);
                 d3.select(this).style("opacity", 1);
             });
-
-            // Reset every edge: coreq edges get coral dashed, prereq edges get black solid
             inner.selectAll("g.edgePath").each(function() {
                 const svgId = d3.select(this).attr("id") || "";
                 const isCoreq = [...coreqEdgeIds].some(edgeId => svgId.includes(edgeId));
@@ -359,7 +361,7 @@ d3.json('data_extract/data/all_courses_py.json').then(coursesData => {
                     .style("stroke", isCoreq ? "coral" : "black")
                     .style("stroke-dasharray", isCoreq ? "5, 5" : null);
             });
-        });
+        }
     }
 
     // Function to update the graph based on selected subjects and themes
@@ -399,6 +401,9 @@ d3.json('data_extract/data/all_courses_py.json').then(coursesData => {
         g.edges().forEach(edge => g.removeEdge(edge.v, edge.w));
         coreqEdgeIds.clear();
         d3.select("svg g").remove();
+        // Reset frozen selection whenever the graph is rebuilt
+        frozenCourseId = null;
+        clearCourseInfoSidebar();
     }
     
     function areFiltersEmpty(subjects, themes, level) {
@@ -499,6 +504,50 @@ d3.json('data_extract/data/all_courses_py.json').then(coursesData => {
             collectDownstreamEdges(code, downstreamMap, visited).forEach(e => edges.push(e));
         });
         return edges;
+    }
+
+    // Populate the "Course Information" sidebar panel with details for the selected course
+    function showCourseInfoInSidebar(course, downstreamMap) {
+        const panel = document.getElementById("course-info-placeholder");
+
+        const id          = course.id || course.course_code || course.code || "Not available";
+        const name        = course.name || course.title || course.course_title || "Not available";
+        const description = course.description || "Not available";
+        const prereqs     = (course.prerequisites  || []).join(", ") || "None";
+        const coreqs      = (course.corequisites   || []).join(", ") || "None";
+        const themes      = (course.themes         || []).join(", ") || "Not available";
+        const category    = course.category || "Not available";
+        const level       = course.level || (course.course_code ? `${course.course_code.charAt(5)}00 level` : "Not available");
+        const term        = course.term || "Not available";
+        const calUrl      = course.calendar_url || null;
+
+        // Derive dependents from the reverse edge map since they are not stored on the course object
+        const dependents = (downstreamMap[id] || []).map(d => d.code).join(", ") || "None";
+
+        panel.classList.add("filled");
+        panel.innerHTML = `
+            <strong>${id}</strong><br>
+            <em>${name}</em>
+            ${calUrl ? `<br><a href="${calUrl}" target="_blank" style="font-size:0.85em;">View in Calendar</a>` : ""}
+            <br><br>
+            <strong>Level:</strong> ${level}<br>
+            <strong>Term:</strong> ${term}<br>
+            <strong>Category:</strong> ${category}<br>
+            <strong>Themes:</strong> ${themes}<br>
+            <br>
+            <strong>Description:</strong><br>${description}<br>
+            <br>
+            <strong>Prerequisites:</strong> ${prereqs}<br>
+            <strong>Corequisites:</strong> ${coreqs}<br>
+            <strong>Dependents:</strong> ${dependents}
+        `;
+    }
+
+    // Clear the sidebar panel back to its default placeholder state
+    function clearCourseInfoSidebar() {
+        const panel = document.getElementById("course-info-placeholder");
+        panel.classList.remove("filled");
+        panel.textContent = "Click a course to view details.";
     }
 
     // Function to filter courses based on keywords in the description

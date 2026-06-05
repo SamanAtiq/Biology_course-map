@@ -13,36 +13,45 @@
 <body>
     <div id="sidebar">
         <h2>Test Coursemap</h2>
-        <label for="course-subject">Filter for upto 3 course codes:</label>
-        <div class="dropdown">
-            <button id="dropdownButton">Select Subjects (0/3)</button>
-            <div id="dropdownContent" class="dropdown-content">
-              <!-- Options will be generated dynamically here -->
+
+        <section class="sidebar-section">
+            <h3 class="section-label">Filters</h3>
+            <label for="course-subject">Filter for up to 3 course codes:</label>
+            <div class="dropdown">
+                <button id="dropdownButton">Select Subjects (0/3)</button>
+                <div id="dropdownContent" class="dropdown-content">
+                  <!-- Options will be generated dynamically here -->
+                </div>
             </div>
-        </div>
-        <label for="course-theme">Filter for a theme:</label>
-        <div class="dropdown-2">
-            <button id="dropdownButton-2">Select Theme</button>
-            <div id="dropdownContent-2" class="dropdown-content-2">
-              <!-- Options will be generated dynamically here -->
+            <label for="course-theme">Filter for a theme:</label>
+            <div class="dropdown-2">
+                <button id="dropdownButton-2">Select Theme</button>
+                <div id="dropdownContent-2" class="dropdown-content-2">
+                  <!-- Options will be generated dynamically here -->
+                </div>
             </div>
-        </div>
-        <label for="course-level">Filter for a course level:</label>
-        <div class="dropdown-3">
-            <button id="dropdownButton-3">Select Course Level</button>
-            <div id="dropdownContent-3" class="dropdown-content-3">
-              <!-- Options will be generated dynamically here -->
+            <label for="course-level">Filter for a course level:</label>
+            <div class="dropdown-3">
+                <button id="dropdownButton-3">Select Course Level</button>
+                <div id="dropdownContent-3" class="dropdown-content-3">
+                  <!-- Options will be generated dynamically here -->
+                </div>
             </div>
-        </div>
-        <div class="input-container">
-            <label for="course-subject">Filter by keywords:</label>
-            <input type="text" id="keywordInput" placeholder="Enter keywords separated by commas" />
-            <button id="searchButton">Search</button>    
-        </div>     
-        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Proin diam arcu, fringilla id volutpat in,
-           dictum vel orci. Suspendisse id maximus lacus. Morbi consequat enim a ex efficitur, ut vehicula odio finibus. 
-           Cras facilisis semper est vel accumsan. Morbi vitae tellus eget risus consequat dictum.</p>
-        <button id="resetButton">Reset Graph</button>
+            <div class="input-container">
+                <label for="keywordInput">Filter by keywords:</label>
+                <input type="text" id="keywordInput" placeholder="Enter keywords separated by commas" />
+                <button id="searchButton">Search</button>
+            </div>
+        </section>
+
+        <section class="sidebar-section">
+            <button id="resetButton">Reset Graph</button>
+        </section>
+
+        <section class="sidebar-section">
+            <h3 class="section-label">Course Information</h3>
+            <p id="course-info-placeholder">Click a course to view details.</p>
+        </section>
     </div>
     <div id="main">
         <div id="dialog" style="display:none; position:fixed; background:white; border:1px solid black; padding:10px; z-index:1000;">
